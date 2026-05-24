@@ -15,9 +15,10 @@ import {
   AlignEndHorizontal
 } from "lucide-react";
 import { useEditorStore } from "@/store/useEditorStore";
+import { Monitor, Grid, Smartphone } from "lucide-react";
 
 export default function PropertiesPanel() {
-  const { selectedObject, canvas, setModified } = useEditorStore();
+  const { selectedObject, canvas, setModified, canvasWidth, canvasHeight, canvasBackground, setCanvasWidth, setCanvasHeight, setCanvasBackground } = useEditorStore();
   const [properties, setProperties] = useState({
     left: 0,
     top: 0,
@@ -143,11 +144,104 @@ export default function PropertiesPanel() {
 
   if (!selectedObject) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-center opacity-40">
-        <Settings2 size={32} className="mb-3" />
-        <p className="text-[11px] font-bold uppercase tracking-widest leading-relaxed px-4">
-          Select an object to edit its properties
-        </p>
+      <div className="space-y-6 p-4">
+        {/* Canvas Settings */}
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Settings2 size={14} className="text-purple-400" />
+            <h3 className="text-[11px] font-bold uppercase tracking-widest text-white">Canvas Settings</h3>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold uppercase text-gray-500 tracking-wider">Width</label>
+              <input
+                type="number"
+                value={canvasWidth}
+                onChange={(e) => {
+                  setCanvasWidth(parseInt(e.target.value) || 100);
+                  setModified(true);
+                }}
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-purple-500 transition-colors"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold uppercase text-gray-500 tracking-wider">Height</label>
+              <input
+                type="number"
+                value={canvasHeight}
+                onChange={(e) => {
+                  setCanvasHeight(parseInt(e.target.value) || 100);
+                  setModified(true);
+                }}
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-purple-500 transition-colors"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5 pt-2">
+            <label className="text-[10px] font-bold uppercase text-gray-500 tracking-wider">Background</label>
+            <div className="flex gap-2">
+              <input
+                type="color"
+                value={canvasBackground}
+                onChange={(e) => {
+                  setCanvasBackground(e.target.value);
+                  setModified(true);
+                }}
+                className="w-8 h-8 rounded-lg bg-transparent border-none cursor-pointer p-0 overflow-hidden"
+              />
+              <input
+                type="text"
+                value={canvasBackground.toUpperCase()}
+                onChange={(e) => {
+                  setCanvasBackground(e.target.value);
+                  setModified(true);
+                }}
+                className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-purple-500 font-mono uppercase"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="h-[1px] bg-white/5 my-4" />
+
+        {/* Quick Presets */}
+        <div className="space-y-3">
+          <label className="text-[10px] font-bold uppercase text-gray-500 tracking-wider">Quick Presets</label>
+          <div className="grid gap-2">
+            <button 
+              onClick={() => { setCanvasWidth(1920); setCanvasHeight(1080); setModified(true); }}
+              className="flex items-center gap-3 w-full bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg px-3 py-2 text-left transition-colors"
+            >
+              <Monitor size={14} className="text-gray-400" />
+              <div>
+                <div className="text-[11px] font-bold text-white">Full HD (Web)</div>
+                <div className="text-[9px] text-gray-500">1920 × 1080</div>
+              </div>
+            </button>
+            <button 
+              onClick={() => { setCanvasWidth(1080); setCanvasHeight(1080); setModified(true); }}
+              className="flex items-center gap-3 w-full bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg px-3 py-2 text-left transition-colors"
+            >
+              <Grid size={14} className="text-gray-400" />
+              <div>
+                <div className="text-[11px] font-bold text-white">Instagram Square</div>
+                <div className="text-[9px] text-gray-500">1080 × 1080</div>
+              </div>
+            </button>
+            <button 
+              onClick={() => { setCanvasWidth(1080); setCanvasHeight(1920); setModified(true); }}
+              className="flex items-center gap-3 w-full bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg px-3 py-2 text-left transition-colors"
+            >
+              <Smartphone size={14} className="text-gray-400" />
+              <div>
+                <div className="text-[11px] font-bold text-white">Story / Reels</div>
+                <div className="text-[9px] text-gray-500">1080 × 1920</div>
+              </div>
+            </button>
+          </div>
+        </div>
       </div>
     );
   }

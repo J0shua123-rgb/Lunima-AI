@@ -20,6 +20,7 @@ export default function PromptBar() {
 
       <div className="relative">
         <textarea
+          id="prompt-bar-input"
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           placeholder="Describe what to generate..."

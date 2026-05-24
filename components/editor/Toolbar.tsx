@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef } from "react";
+import React from "react";
 import {
   MousePointer2,
   Move,
@@ -11,9 +11,8 @@ import {
   LassoSelect,
   Crop,
   Eraser,
-  ImagePlus
+  Image as ImageIcon
 } from "lucide-react";
-import { FabricImage } from "fabric";
 import { useEditorStore, ToolType } from "@/store/useEditorStore";
 import { cn } from "@/lib/utils";
 
@@ -51,42 +50,7 @@ const ToolButton = ({ icon: Icon, label, isActive, onClick, isSpecial }: ToolBut
 const Divider = () => <div className="w-8 h-[1px] bg-white/5 my-1" />;
 
 export default function Toolbar() {
-  const { activeTool, setActiveTool, canvas, setModified, setSelectedObject } = useEditorStore();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !canvas) return;
-
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const dataUrl = event.target?.result as string;
-      if (dataUrl) {
-        try {
-          const img = await FabricImage.fromURL(dataUrl);
-          
-          // Scale down if image is too large
-          const maxDim = 800;
-          if (img.width && img.height) {
-            const scale = Math.min(1, maxDim / img.width, maxDim / img.height);
-            img.scale(scale);
-          }
-
-          canvas.add(img);
-          canvas.centerObject(img);
-          canvas.setActiveObject(img);
-          setSelectedObject(img);
-          setModified(true);
-        } catch (error) {
-          console.error("Error loading image to canvas:", error);
-        }
-      }
-    };
-    reader.readAsDataURL(file);
-
-    // Reset input so the same file can be uploaded again if needed
-    e.target.value = '';
-  };
+  const { activeTool, setActiveTool, canvas, isAssetsDrawerOpen, setAssetsDrawerOpen, activeRightTab, setActiveRightTab } = useEditorStore();
 
   const handleToolClick = (tool: ToolType) => {
     if (!canvas) return;
@@ -130,7 +94,7 @@ export default function Toolbar() {
         isActive={activeTool === 'ai'}
         onClick={() => {
           handleToolClick('ai');
-          // Toast or message handled in RightPanel
+          document.getElementById('prompt-bar-input')?.focus();
         }}
         isSpecial
       />
@@ -185,22 +149,12 @@ export default function Toolbar() {
 
       <Divider />
 
-      {/* Hidden File Input */}
-      <input 
-        type="file" 
-        ref={fileInputRef} 
-        onChange={handleImageUpload} 
-        accept="image/*" 
-        className="hidden" 
-      />
-
       <ToolButton
-        icon={ImagePlus}
-        label="Upload Image"
-        isActive={false}
-        onClick={() => fileInputRef.current?.click()}
+        icon={ImageIcon}
+        label="Assets"
+        isActive={isAssetsDrawerOpen}
+        onClick={() => setAssetsDrawerOpen(!isAssetsDrawerOpen)}
       />
     </aside>
   );
 }
-

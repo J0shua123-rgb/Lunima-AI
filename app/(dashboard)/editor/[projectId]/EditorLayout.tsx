@@ -6,6 +6,7 @@ import TopBar from "@/components/editor/TopBar";
 import Toolbar from "@/components/editor/Toolbar";
 import Canvas from "@/components/editor/Canvas";
 import RightPanel from "@/components/editor/RightPanel";
+import AssetsDrawer from "@/components/editor/AssetsDrawer";
 import { useEditorStore } from "@/store/useEditorStore";
 import { createClient } from "@/lib/supabase/client";
 
@@ -14,18 +15,39 @@ interface EditorLayoutProps {
 }
 
 export default function EditorLayout({ project }: EditorLayoutProps) {
-  const { canvas, isModified, setModified } = useEditorStore();
+  const { 
+    canvas, isModified, setModified, 
+    isAssetsDrawerOpen, setAssetsDrawerOpen,
+    canvasWidth, canvasHeight, canvasBackground,
+    setCanvasWidth, setCanvasHeight, setCanvasBackground
+  } = useEditorStore();
+  
   const supabase = createClient();
+
+  // Initialize store with project data on mount
+  useEffect(() => {
+    if (project.width && project.height) {
+      setCanvasWidth(project.width);
+      setCanvasHeight(project.height);
+    }
+    if (project.background_color) {
+      setCanvasBackground(project.background_color);
+    }
+  }, [project, setCanvasWidth, setCanvasHeight, setCanvasBackground]);
 
   // 1. Load canvas data on mount
   useEffect(() => {
     if (!canvas || !project.canvas_data) return;
 
-    // Load from JSON
-    canvas.loadFromJSON(project.canvas_data, () => {
-      canvas.renderAll();
-      setModified(false);
-    });
+    // Fabric v7: loadFromJSON is async (returns a Promise).
+    // The old callback-as-2nd-arg is silently ignored — objects load
+    // but never render, causing the blank canvas on open.
+    canvas
+      .loadFromJSON(project.canvas_data)
+      .then(() => {
+        canvas.requestRenderAll();
+        setModified(false);
+      });
   }, [canvas, project.canvas_data, setModified]);
 
   // 2. Auto-save every 30s
@@ -38,7 +60,12 @@ export default function EditorLayout({ project }: EditorLayoutProps) {
       const canvasData = canvas.toJSON();
       const { error } = await supabase
         .from("projects")
-        .update({ canvas_data: canvasData })
+        .update({ 
+          canvas_data: canvasData,
+          width: canvasWidth,
+          height: canvasHeight,
+          background_color: canvasBackground
+        })
         .eq("id", project.id);
 
       if (!error) {
@@ -93,9 +120,12 @@ export default function EditorLayout({ project }: EditorLayoutProps) {
         {/* Left Toolbar */}
         <Toolbar />
 
+        {/* Assets Slide-Out Drawer */}
+        <AssetsDrawer isOpen={isAssetsDrawerOpen} onClose={() => setAssetsDrawerOpen(false)} />
+
         {/* Main Canvas Area */}
         <main className="flex-1 relative flex flex-col overflow-hidden">
-          <Canvas width={project.width} height={project.height} />
+          <Canvas width={canvasWidth} height={canvasHeight} />
         </main>
 
         {/* Right Sidebar */}

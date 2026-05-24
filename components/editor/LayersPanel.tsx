@@ -159,29 +159,26 @@ export default function LayersPanel() {
   };
 
   const onDrop = (dropIndex: number) => {
-    if (draggedIndex === null || !canvas) return;
-    
-    const items = [...layers];
-    const draggedItem = items[draggedIndex];
-    items.splice(draggedIndex, 1);
-    items.splice(dropIndex, 0, draggedItem);
+    if (draggedIndex === null || draggedIndex === dropIndex || !canvas) return;
 
-    // Update Fabric canvas order
-    // Fabric objects at index 0 are at the bottom, so we reverse our logic
-    // layers[0] is the top-most object (reverse order)
     const objects = canvas.getObjects();
-    
-    // Calculate new target index in fabric objects
-    // layers index 0 -> fabric objects index N-1
-    // layers index dropIndex -> fabric objects index N - 1 - dropIndex
-    const targetFabricIndex = objects.length - 1 - dropIndex;
-    
-    draggedItem.moveTo(targetFabricIndex);
-    canvas.renderAll();
+    const N = objects.length;
+
+    // layers[] is displayed top-to-bottom (layers[0] = topmost object).
+    // Fabric's _objects array is bottom-to-top  (index 0 = bottom).
+    // layers[i]  ==  _objects[N-1-i]
+    //
+    // We want the dragged item to land at layers position dropIndex,
+    // which is fabric index (N - 1 - dropIndex).
+    const targetFabricIndex = N - 1 - dropIndex;
+
+    canvas.moveObjectTo(objects[N - 1 - draggedIndex], targetFabricIndex);
+    canvas.requestRenderAll();
     setModified(true);
     setDraggedIndex(null);
     refreshLayers();
   };
+
 
   if (!canvas || layers.length === 0) {
     return (
