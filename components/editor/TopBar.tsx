@@ -188,6 +188,7 @@ export default function TopBar({ projectId, initialName }: TopBarProps) {
             </div>
           </div>
         </div>
+      </div>
 
       {/* Center: Zoom Controls */}
       <div className="flex items-center bg-[#1a1a38] rounded-lg border border-white/5 overflow-hidden">

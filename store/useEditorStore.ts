@@ -31,6 +31,14 @@ interface EditorState {
   setCanvasHeight: (height: number) => void;
   setCanvasBackground: (bg: string) => void;
 
+  // Eraser Settings
+  eraserMode: 'delete' | 'fade';
+  eraserBrushSize: number;
+  eraserStrength: number;
+  setEraserMode: (mode: 'delete' | 'fade') => void;
+  setEraserBrushSize: (size: number) => void;
+  setEraserStrength: (strength: number) => void;
+
   history: string[];
   historyIndex: number;
   isHistoryMutating: boolean;
@@ -66,6 +74,14 @@ export const useEditorStore = create<EditorState>((set) => ({
   setCanvasWidth: (width) => set({ canvasWidth: width }),
   setCanvasHeight: (height) => set({ canvasHeight: height }),
   setCanvasBackground: (bg) => set({ canvasBackground: bg }),
+
+  // Eraser Settings Initial State
+  eraserMode: 'delete',
+  eraserBrushSize: 50,
+  eraserStrength: 20,
+  setEraserMode: (eraserMode) => set({ eraserMode }),
+  setEraserBrushSize: (eraserBrushSize) => set({ eraserBrushSize }),
+  setEraserStrength: (eraserStrength) => set({ eraserStrength }),
 
   history: [],
   historyIndex: -1,

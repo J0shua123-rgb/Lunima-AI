@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Canvas as FabricCanvas, Rect, Ellipse, IText, PencilBrush, Group, FabricObject } from "fabric";
 import { useEditorStore } from "@/store/useEditorStore";
 
@@ -12,20 +12,31 @@ interface CanvasProps {
   height: number;
 }
 
-const {
-  canvas,
-  setCanvas,
-  setModified,
-  setSelectedObject,
-  activeTool,
-  setActiveTool,
-  fillColor,
-  strokeColor,
-  strokeWidth,
-  setZoom,
-  canvasBackground,
-  pushHistory
-} = useEditorStore();
+export default function Canvas({ width, height }: CanvasProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const initialized = useRef(false);
+  const isEraserDrawingRef = useRef(false);
+  const [brushCursorPos, setBrushCursorPos] = useState<{ x: number; y: number } | null>(null);
+
+  const {
+    canvas,
+    setCanvas,
+    setModified,
+    setSelectedObject,
+    activeTool,
+    setActiveTool,
+    fillColor,
+    strokeColor,
+    strokeWidth,
+    zoom,
+    setZoom,
+    canvasBackground,
+    pushHistory,
+    eraserMode,
+    eraserBrushSize,
+    eraserStrength
+  } = useEditorStore();
 
 // ARROW KEY NUDGING
 useEffect(() => {
@@ -153,15 +164,25 @@ useEffect(() => {
   setCanvas(fabricCanvas);
 
   // Event Listeners
+  // IMPORTANT: Guard all history pushes with isHistoryMutating.
+  // When undo/redo calls loadFromJSON it fires object:added for EVERY
+  // restored object — without this guard each one would push a new
+  // (broken, partial) snapshot, filling the canvas with ghost copies.
   fabricCanvas.on("object:modified", () => {
+    if (useEditorStore.getState().isHistoryMutating) return;
+    if (isEraserDrawingRef.current) return;
     setModified(true);
     pushHistory(JSON.stringify(fabricCanvas.toJSON()));
   });
   fabricCanvas.on("object:added", () => {
+    if (useEditorStore.getState().isHistoryMutating) return;
+    if (isEraserDrawingRef.current) return;
     setModified(true);
     pushHistory(JSON.stringify(fabricCanvas.toJSON()));
   });
   fabricCanvas.on("object:removed", () => {
+    if (useEditorStore.getState().isHistoryMutating) return;
+    if (isEraserDrawingRef.current) return;
     setModified(true);
     pushHistory(JSON.stringify(fabricCanvas.toJSON()));
   });
@@ -174,7 +195,9 @@ useEffect(() => {
   });
   fabricCanvas.on("selection:cleared", () => setSelectedObject(null));
 
-  // FIX 2: Responsive Scaling using setDimensions
+  // Responsive Scaling: zoom MUST be applied before setDimensions so
+  // the canvas never momentarily has 0 pixel dimensions — that would
+  // cause Fabric's drawImage to throw an InvalidStateError.
   const handleResize = () => {
     if (!containerRef.current || !fabricCanvas) return;
     const containerWidth = containerRef.current.clientWidth;
@@ -182,13 +205,15 @@ useEffect(() => {
     const padding = 40;
     const scaleX = (containerWidth - padding) / width;
     const scaleY = (containerHeight - padding) / height;
-    const scale = Math.min(scaleX, scaleY, 1);
+    const scale = Math.max(0.01, Math.min(scaleX, scaleY, 1)); // clamp to never be 0
 
+    // Step 1: set zoom first
     fabricCanvas.setZoom(scale);
     setZoom(Math.round(scale * 100));
+    // Step 2: then resize the DOM canvas element to match
     fabricCanvas.setDimensions({
-      width: width * scale,
-      height: height * scale
+      width: Math.max(1, width * scale),
+      height: Math.max(1, height * scale)
     });
   };
 
@@ -214,19 +239,20 @@ useEffect(() => {
   canvas.backgroundColor = canvasBackground;
   canvas.requestRenderAll();
 
-  // Also trigger container resize logic to re-center/re-scale the view
+  // Re-center/re-scale the view when canvas dimensions change
   const containerWidth = containerRef.current?.clientWidth || 800;
   const containerHeight = containerRef.current?.clientHeight || 600;
   const padding = 40;
   const scaleX = (containerWidth - padding) / width;
   const scaleY = (containerHeight - padding) / height;
-  const scale = Math.min(scaleX, scaleY, 1);
+  const scale = Math.max(0.01, Math.min(scaleX, scaleY, 1));
 
+  // Zoom before resize to avoid 0-dimension drawImage error
   canvas.setZoom(scale);
   setZoom(Math.round(scale * 100));
   canvas.setDimensions({
-    width: width * scale,
-    height: height * scale
+    width: Math.max(1, width * scale),
+    height: Math.max(1, height * scale)
   });
 }, [canvas, width, height, canvasBackground, setZoom]);
 
@@ -242,21 +268,111 @@ useEffect(() => {
   canvas.off("mouse:move");
   canvas.off("mouse:up");
 
-  // Lasso and Eraser handling
-  if (activeTool === "lasso" || activeTool === "eraser") {
+  // Lasso: free-draw path with PencilBrush
+  if (activeTool === "lasso") {
     canvas.isDrawingMode = true;
     const brush = new PencilBrush(canvas);
-
-    if (activeTool === "eraser") {
-      brush.color = "#ffffff";
-      brush.width = 20;
-    } else {
-      brush.color = "#7C3AED";
-      brush.width = 3;
-    }
-
+    brush.color = "#7C3AED";
+    brush.width = 3;
     canvas.freeDrawingBrush = brush;
     return;
+  }
+
+  // Two-Mode Eraser: hit-test and DELETE or FADE objects under cursor based on brush radius.
+  if (activeTool === "eraser") {
+    canvas.isDrawingMode = false;
+    canvas.selection = false;
+    canvas.defaultCursor = "none"; // Hide default cursor so our custom red circle is the cursor!
+
+    let isEraserDown = false;
+
+    const eraseAtPoint = (opt: Record<string, any>) => {
+      const point = opt.scenePoint || canvas.getScenePoint(opt.e);
+      const brushRadius = eraserBrushSize / 2;
+
+      // Use precise containsPoint check — only targets objects whose actual
+      // shape (not just bounding box) contains the pointer point, or whose
+      // center is within the brush radius for larger sweeping erases.
+      const targets = canvas.getObjects().filter((obj) => {
+        // Primary check: does the object's actual shape contain the cursor point?
+        if (obj.containsPoint(point)) return true;
+
+        // Secondary check: is the center of the object within brush radius?
+        // This ensures dragging the eraser over an object deletes it naturally.
+        const bounds = obj.getBoundingRect();
+        const objCenterX = bounds.left + bounds.width / 2;
+        const objCenterY = bounds.top + bounds.height / 2;
+        const dx = point.x - objCenterX;
+        const dy = point.y - objCenterY;
+        const distanceToCenter = Math.sqrt(dx * dx + dy * dy);
+
+        // Also check corners/edges for smaller brush sizes
+        const clamp = (val: number, min: number, max: number) => Math.max(min, Math.min(val, max));
+        const closestX = clamp(point.x, bounds.left, bounds.left + bounds.width);
+        const closestY = clamp(point.y, bounds.top, bounds.top + bounds.height);
+        const edgeDx = point.x - closestX;
+        const edgeDy = point.y - closestY;
+        const distanceToEdge = Math.sqrt(edgeDx * edgeDx + edgeDy * edgeDy);
+
+        // Only trigger if brush actually overlaps the object shape
+        return distanceToCenter <= brushRadius * 0.5 || distanceToEdge <= brushRadius * 0.3;
+      });
+
+      if (targets.length > 0) {
+        if (eraserMode === 'delete') {
+          canvas.remove(...targets);
+          canvas.requestRenderAll();
+          setModified(true);
+        } else {
+          // Fade mode: reduce opacity gradually
+          let opacityChanged = false;
+          targets.forEach((obj) => {
+            const currentOpacity = obj.opacity ?? 1;
+            if (currentOpacity > 0) {
+              const reduction = (eraserStrength / 100) * 0.1;
+              const newOpacity = Math.max(0, currentOpacity - reduction);
+              obj.set('opacity', newOpacity);
+              opacityChanged = true;
+            }
+          });
+          if (opacityChanged) {
+            canvas.requestRenderAll();
+            setModified(true);
+          }
+        }
+      }
+    };
+
+    const onEraserDown = (opt: Record<string, any>) => {
+      isEraserDown = true;
+      isEraserDrawingRef.current = true;
+      eraseAtPoint(opt);
+    };
+
+    const onEraserMove = (opt: Record<string, any>) => {
+      if (isEraserDown) eraseAtPoint(opt);
+    };
+
+    const onEraserUp = () => {
+      if (isEraserDown) {
+        isEraserDown = false;
+        isEraserDrawingRef.current = false;
+        // Push single history frame on mouse up
+        pushHistory(JSON.stringify(canvas.toJSON()));
+      }
+    };
+
+    canvas.on("mouse:down", onEraserDown);
+    canvas.on("mouse:move", onEraserMove);
+    canvas.on("mouse:up",   onEraserUp);
+
+    return () => {
+      canvas.off("mouse:down", onEraserDown);
+      canvas.off("mouse:move", onEraserMove);
+      canvas.off("mouse:up",   onEraserUp);
+      canvas.defaultCursor = "default";
+      isEraserDrawingRef.current = false;
+    };
   }
 
   if (activeTool === "select") {
@@ -418,7 +534,7 @@ useEffect(() => {
     canvas.off("mouse:move", handleMouseMove);
     canvas.off("mouse:up", handleMouseUp);
   };
-}, [canvas, activeTool, setActiveTool, setModified, fillColor, strokeColor, strokeWidth]);
+}, [canvas, activeTool, setActiveTool, setModified, fillColor, strokeColor, strokeWidth, eraserMode, eraserBrushSize, eraserStrength, pushHistory]);
 
 
 return (
@@ -430,6 +546,20 @@ return (
       backgroundImage: "radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px)",
       backgroundSize: "24px 24px"
     }}
+    onPointerMove={(e) => {
+      if (activeTool === "eraser" && containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        setBrushCursorPos({
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top
+        });
+      }
+    }}
+    onPointerLeave={() => {
+      if (activeTool === "eraser") {
+        setBrushCursorPos(null);
+      }
+    }}
   >
     <div className="relative shadow-[0_0_50px_rgba(0,0,0,0.5)] bg-white">
       <canvas ref={canvasRef} />
@@ -438,6 +568,24 @@ return (
         {width} × {height} px
       </div>
     </div>
+
+    {activeTool === "eraser" && brushCursorPos && (
+      <div
+        style={{
+          position: "absolute",
+          left: brushCursorPos.x,
+          top: brushCursorPos.y,
+          width: eraserBrushSize * (zoom / 100),
+          height: eraserBrushSize * (zoom / 100),
+          transform: "translate(-50%, -50%)",
+          borderRadius: "50%",
+          border: "2px solid rgba(239, 68, 68, 0.7)",
+          backgroundColor: "rgba(239, 68, 68, 0.1)",
+          pointerEvents: "none",
+          zIndex: 100,
+        }}
+      />
+    )}
   </div>
 );
 }

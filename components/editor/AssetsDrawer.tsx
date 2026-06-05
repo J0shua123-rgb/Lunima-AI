@@ -49,8 +49,8 @@ export default function AssetsDrawer({ isOpen, onClose }: AssetsDrawerProps) {
     }
 
     const fileList = data
-      .filter(file => file.name !== '.emptyFolderPlaceholder')
-      .map(file => {
+      .filter((file: any) => file.name !== '.emptyFolderPlaceholder')
+      .map((file: any) => {
         const { data: publicUrlData } = supabase.storage
           .from('generated-images')
           .getPublicUrl(`${uid}/${file.name}`);

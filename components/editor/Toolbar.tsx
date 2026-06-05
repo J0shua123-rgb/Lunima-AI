@@ -10,8 +10,7 @@ import {
   Type,
   LassoSelect,
   Crop,
-  Eraser,
-  Image as ImageIcon
+  Eraser
 } from "lucide-react";
 import { useEditorStore, ToolType } from "@/store/useEditorStore";
 import { cn } from "@/lib/utils";
@@ -50,12 +49,17 @@ const ToolButton = ({ icon: Icon, label, isActive, onClick, isSpecial }: ToolBut
 const Divider = () => <div className="w-8 h-[1px] bg-white/5 my-1" />;
 
 export default function Toolbar() {
-  const { activeTool, setActiveTool, canvas, isAssetsDrawerOpen, setAssetsDrawerOpen, activeRightTab, setActiveRightTab } = useEditorStore();
+  const { activeTool, setActiveTool, setActiveRightTab, canvas } = useEditorStore();
 
   const handleToolClick = (tool: ToolType) => {
     if (!canvas) return;
 
     setActiveTool(tool);
+
+    // Auto-switch to Properties tab for tools that have settings panels
+    if (tool === 'eraser' || tool === 'text') {
+      setActiveRightTab('Properties');
+    }
 
     // Specific tool behaviors
     if (tool === 'select') {
@@ -147,14 +151,6 @@ export default function Toolbar() {
         onClick={() => handleToolClick('eraser')}
       />
 
-      <Divider />
-
-      <ToolButton
-        icon={ImageIcon}
-        label="Assets"
-        isActive={isAssetsDrawerOpen}
-        onClick={() => setAssetsDrawerOpen(!isAssetsDrawerOpen)}
-      />
     </aside>
   );
 }
